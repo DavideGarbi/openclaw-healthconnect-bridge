@@ -15,66 +15,150 @@ The app reads health metrics from Health Connect and periodically syncs them to 
 | Respiratory | Respiratory Rate |
 | Metabolic | Blood Glucose |
 
+## Quick Start
+
+This guide walks you through the full setup: installing the plugin on your OpenClaw server, then connecting the Android app.
+
+### Step 1: Install the OpenClaw Plugin
+
+Copy the `openclaw-plugin/` folder from this repo into your OpenClaw extensions directory:
+
+```bash
+# Clone the repo (or download the openclaw-plugin folder)
+git clone https://github.com/davidegarbi/openclaw-healthconnect-bridge.git
+
+# Copy the plugin to your OpenClaw extensions
+cp -r openclaw-healthconnect-bridge/openclaw-plugin ~/.openclaw/extensions/health-connect
+
+# Install plugin dependencies
+cd ~/.openclaw/extensions/health-connect
+npm install
+```
+
+### Step 2: Generate an Auth Token
+
+The auth token is a shared secret between the plugin and the Android app. Generate one:
+
+```bash
+openssl rand -hex 32
+```
+
+This will output something like: `a1b2c3d4e5f6...` — save this, you will need it in both the plugin config and the Android app.
+
+### Step 3: Configure the Plugin
+
+Add the plugin to your OpenClaw configuration file (`~/.openclaw/openclaw.json` or wherever your config lives):
+
+```json5
+{
+  plugins: {
+    entries: {
+      "health-connect": {
+        enabled: true,
+        config: {
+          // REQUIRED: paste the token you generated in Step 2
+          authToken: "a1b2c3d4e5f6...",
+
+          // OPTIONAL: where to store health data files (default shown)
+          storagePath: "~/.openclaw/health-connect-data",
+
+          // OPTIONAL: HTTP endpoint path (default shown)
+          httpPath: "/health-connect/sync",
+
+          // OPTIONAL: how many days of data to keep (default: 90)
+          retentionDays: 90
+        }
+      }
+    }
+  }
+}
+```
+
+Then restart the OpenClaw gateway:
+
+```bash
+openclaw gateway restart
+```
+
+### Step 4: Find Your Endpoint URL
+
+The endpoint URL is your OpenClaw gateway address plus the plugin's HTTP path. It looks like:
+
+```
+http://<your-server-ip>:<gateway-port>/health-connect/sync
+```
+
+**How to find it:**
+- If you run OpenClaw locally: `http://localhost:<port>/health-connect/sync` (check your gateway config for the port)
+- If you run OpenClaw on a server: `http://<your-server-ip>:<port>/health-connect/sync`
+- If you use HTTPS with a domain: `https://yourdomain.com/health-connect/sync`
+
+You can verify the plugin is running by opening the URL in a browser (GET request):
+
+```bash
+curl http://localhost:<port>/health-connect/sync
+# Should return: {"ok":true,"plugin":"health-connect","datesAvailable":0,"latestDate":null}
+```
+
+**Important:** Your Android phone must be able to reach this URL over the network. If your OpenClaw server runs on your local machine, both devices must be on the same network (Wi-Fi), and you should use your computer's local IP address (e.g. `http://192.168.1.100:<port>/health-connect/sync`), not `localhost`.
+
+### Step 5: Install the Android App
+
+Download the APK from the [Releases page](https://github.com/davidegarbi/openclaw-healthconnect-bridge/releases) and install it on your Android device.
+
+Your device also needs [Health Connect](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) installed (comes preinstalled on most devices running Android 14+; available on Play Store for Android 9+).
+
+### Step 6: Configure the Android App
+
+1. Open the app
+2. Tap **Grant Permissions** to allow reading health data from Health Connect
+3. In the **Configuration** section:
+   - **Endpoint URL**: paste the full URL from Step 4 (e.g. `http://192.168.1.100:3000/health-connect/sync`)
+   - **Bearer Token**: paste the same token you generated in Step 2
+4. Tap **Save**
+5. Choose a **Sync Interval** (how often to auto-sync in the background) or leave it on "Manual only"
+6. Tap **Sync Now** to test the connection
+
+If the sync succeeds, you will see "Sync completed successfully" and the "Last sync" timestamp will update. Your OpenClaw agent can now query your health data using the `health_connect` tool.
+
 ## Architecture
 
 ```
-MainActivity (Compose)  ──▶  MainViewModel
-                                  │
-                    ┌─────────────┼─────────────┐
-                    ▼             ▼              ▼
-           HealthConnectReader  AppPreferences  SyncScheduler
-                    │            SecurePrefs        │
-                    └────────┐                ┌─────┘
-                             ▼                ▼
-                          SyncWorker (WorkManager)
-                             │
-                             ▼
-                     OpenClawClient (Retrofit)
-                             │
-                             ▼
-                    POST /health-connect/sync
+Android App (Health Connect) --> HTTP POST --> OpenClaw Gateway --> Plugin --> JSON Storage
+                                                                      |
+                                                              Agent Tool (query)
 ```
 
 ## Requirements
 
 - Android 9+ (API 28)
 - [Health Connect](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) installed on the device
-- A running OpenClaw instance with the health-connect plugin enabled
-- JDK 21 for building
+- A running OpenClaw instance
+- Network connectivity between phone and server
 
-## Building
+## Building from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/davidegarbi/openclaw-healthconnect-bridge.git
 cd openclaw-healthconnect-bridge
 
 # Build debug APK
 ./gradlew assembleDebug
+# Output: app/build/outputs/apk/debug/app-debug.apk
 
 # Run unit tests
 ./gradlew test
-
-# Build release APK
-./gradlew assembleRelease
 ```
 
-## Setup
+Requires JDK 21.
 
-1. Install the app on your Android device
-2. Open the app and grant Health Connect permissions
-3. Enter your OpenClaw server endpoint URL (e.g. `https://your-server.com/api/`)
-4. Enter your Bearer token
-5. Choose a sync interval or use manual sync
-6. Tap **Sync Now** to verify the connection
+## App Configuration Reference
 
-## Configuration
-
-| Setting | Description |
-|---|---|
-| **Endpoint URL** | Base URL of your OpenClaw instance |
-| **Bearer Token** | Authentication token (stored encrypted on device) |
-| **Sync Interval** | 15 min / 30 min / 1 hour / 4 hours / Manual only |
+| Setting | Description | Example |
+|---|---|---|
+| **Endpoint URL** | Full URL of the plugin's sync endpoint on your OpenClaw server | `http://192.168.1.100:3000/health-connect/sync` |
+| **Bearer Token** | The same `authToken` you configured in the plugin (generated with `openssl rand -hex 32`) | `a1b2c3d4e5f6...` |
+| **Sync Interval** | How often to auto-sync in the background | 15 min / 30 min / 1 hr / 4 hrs / Manual only |
 
 ## Tech Stack
 
@@ -84,10 +168,9 @@ cd openclaw-healthconnect-bridge
 - **Background Sync**: WorkManager
 - **Preferences**: DataStore + EncryptedSharedPreferences
 - **Health Data**: Health Connect Client SDK
+- **Plugin**: TypeScript (Node.js)
 
 ## Repository Structure
-
-This repo contains both the Android app and the OpenClaw server-side plugin:
 
 ```
 openclaw-healthconnect-bridge/
@@ -96,37 +179,19 @@ openclaw-healthconnect-bridge/
 ├── ...
 ```
 
-### Android App
-
-```
-app/src/main/java/io/github/davidegarbi/openclaw_healthconnect_bridge/
-├── MainActivity.kt              # Entry point, permission handling
-├── OpenClawApp.kt               # Application class, auto-starts sync
-├── data/
-│   ├── healthconnect/
-│   │   ├── HealthConnectReader.kt   # Reads all 13 record types
-│   │   └── HealthDataModels.kt      # Data classes for health samples
-│   ├── network/
-│   │   ├── OpenClawApi.kt           # Retrofit API interface
-│   │   ├── OpenClawClient.kt        # Retrofit client factory
-│   │   └── SyncPayload.kt           # JSON payload model
-│   ├── preferences/
-│   │   ├── AppPreferences.kt        # DataStore for app settings
-│   │   └── SecurePreferences.kt     # Encrypted storage for token
-│   └── sync/
-│       ├── SyncScheduler.kt         # WorkManager scheduling
-│       └── SyncWorker.kt            # Background sync worker
-└── ui/
-    ├── MainScreen.kt                # Compose UI
-    ├── MainViewModel.kt             # UI state management
-    └── theme/
-        ├── Color.kt
-        └── Theme.kt
-```
-
 ### OpenClaw Plugin
 
-See [`openclaw-plugin/README.md`](openclaw-plugin/README.md) for full plugin documentation including the sync API, supported record types, and agent tool usage.
+See [`openclaw-plugin/README.md`](openclaw-plugin/README.md) for full plugin documentation including the sync API specification, supported record types, and agent tool usage.
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Sync fails with no error | Make sure your phone can reach the server (same Wi-Fi network, correct IP) |
+| 401 Unauthorized | Auth token is missing in the app or the plugin has no `authToken` configured |
+| 403 Forbidden | The token in the app does not match the token in the plugin config |
+| Health Connect not available | Install or update [Health Connect](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) from the Play Store |
+| No data after sync | Make sure you granted all Health Connect permissions in the app, and that your watch/phone has actually recorded data |
 
 ## Contributing
 

@@ -30,23 +30,24 @@ class HealthConnectReader(context: Context) {
     val healthConnectClient: HealthConnectClient get() = client
 
     suspend fun readSnapshot(from: Instant, to: Instant): HealthSnapshot = coroutineScope {
+        Log.i(TAG, "Reading health data from $from to $to")
         val timeRange = TimeRangeFilter.between(from, to)
 
-        val heartRate = async { readHeartRate(timeRange) }
-        val steps = async { readSteps(timeRange) }
-        val sleep = async { readSleep(timeRange) }
-        val calories = async { readCalories(timeRange) }
-        val spo2 = async { readSpO2(timeRange) }
-        val distance = async { readDistance(timeRange) }
-        val exercise = async { readExercise(timeRange) }
-        val bloodPressure = async { readBloodPressure(timeRange) }
-        val temperature = async { readTemperature(timeRange) }
-        val respiratoryRate = async { readRespiratoryRate(timeRange) }
-        val bloodGlucose = async { readBloodGlucose(timeRange) }
-        val weight = async { readWeight(timeRange) }
-        val height = async { readHeight(timeRange) }
+        val heartRate = async { tryRead("heart_rate") { readHeartRate(timeRange) } }
+        val steps = async { tryRead("steps") { readSteps(timeRange) } }
+        val sleep = async { tryRead("sleep") { readSleep(timeRange) } }
+        val calories = async { tryRead("calories") { readCalories(timeRange) } }
+        val spo2 = async { tryRead("spo2") { readSpO2(timeRange) } }
+        val distance = async { tryRead("distance") { readDistance(timeRange) } }
+        val exercise = async { tryRead("exercise") { readExercise(timeRange) } }
+        val bloodPressure = async { tryRead("blood_pressure") { readBloodPressure(timeRange) } }
+        val temperature = async { tryRead("temperature") { readTemperature(timeRange) } }
+        val respiratoryRate = async { tryRead("respiratory_rate") { readRespiratoryRate(timeRange) } }
+        val bloodGlucose = async { tryRead("blood_glucose") { readBloodGlucose(timeRange) } }
+        val weight = async { tryRead("weight") { readWeight(timeRange) } }
+        val height = async { tryRead("height") { readHeight(timeRange) } }
 
-        HealthSnapshot(
+        val snapshot = HealthSnapshot(
             heartRate = heartRate.await(),
             steps = steps.await(),
             sleep = sleep.await(),
@@ -61,10 +62,20 @@ class HealthConnectReader(context: Context) {
             weight = weight.await(),
             height = height.await()
         )
+
+        val totalRecords = listOfNotNull(
+            snapshot.heartRate, snapshot.steps, snapshot.sleep, snapshot.calories,
+            snapshot.spo2, snapshot.distance, snapshot.exercise, snapshot.bloodPressure,
+            snapshot.temperature, snapshot.respiratoryRate, snapshot.bloodGlucose,
+            snapshot.weight, snapshot.height
+        ).sumOf { it.size }
+        Log.i(TAG, "Health data read complete: $totalRecords total records")
+
+        snapshot
     }
 
-    private suspend fun readHeartRate(timeRange: TimeRangeFilter): List<HeartRateSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(HeartRateRecord::class, timeRange))
+    private suspend fun readHeartRate(timeRange: TimeRangeFilter): List<HeartRateSample>? {
+        return client.readRecords(ReadRecordsRequest(HeartRateRecord::class, timeRange))
             .records.flatMap { record ->
                 record.samples.map { sample ->
                     HeartRateSample(
@@ -75,8 +86,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readSteps(timeRange: TimeRangeFilter): List<StepsSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(StepsRecord::class, timeRange))
+    private suspend fun readSteps(timeRange: TimeRangeFilter): List<StepsSample>? {
+        return client.readRecords(ReadRecordsRequest(StepsRecord::class, timeRange))
             .records.map { record ->
                 StepsSample(
                     startTime = record.startTime.toString(),
@@ -86,8 +97,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readSleep(timeRange: TimeRangeFilter): List<SleepSession>? = tryRead {
-        client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, timeRange))
+    private suspend fun readSleep(timeRange: TimeRangeFilter): List<SleepSession>? {
+        return client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, timeRange))
             .records.map { record ->
                 SleepSession(
                     startTime = record.startTime.toString(),
@@ -97,8 +108,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readCalories(timeRange: TimeRangeFilter): List<CaloriesSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(TotalCaloriesBurnedRecord::class, timeRange))
+    private suspend fun readCalories(timeRange: TimeRangeFilter): List<CaloriesSample>? {
+        return client.readRecords(ReadRecordsRequest(TotalCaloriesBurnedRecord::class, timeRange))
             .records.map { record ->
                 CaloriesSample(
                     startTime = record.startTime.toString(),
@@ -108,8 +119,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readSpO2(timeRange: TimeRangeFilter): List<SpO2Sample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, timeRange))
+    private suspend fun readSpO2(timeRange: TimeRangeFilter): List<SpO2Sample>? {
+        return client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, timeRange))
             .records.map { record ->
                 SpO2Sample(
                     time = record.time.toString(),
@@ -118,8 +129,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readDistance(timeRange: TimeRangeFilter): List<DistanceSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(DistanceRecord::class, timeRange))
+    private suspend fun readDistance(timeRange: TimeRangeFilter): List<DistanceSample>? {
+        return client.readRecords(ReadRecordsRequest(DistanceRecord::class, timeRange))
             .records.map { record ->
                 DistanceSample(
                     startTime = record.startTime.toString(),
@@ -129,8 +140,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readExercise(timeRange: TimeRangeFilter): List<ExerciseSession>? = tryRead {
-        client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, timeRange))
+    private suspend fun readExercise(timeRange: TimeRangeFilter): List<ExerciseSession>? {
+        return client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, timeRange))
             .records.map { record ->
                 ExerciseSession(
                     startTime = record.startTime.toString(),
@@ -141,8 +152,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readBloodPressure(timeRange: TimeRangeFilter): List<BloodPressureSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(BloodPressureRecord::class, timeRange))
+    private suspend fun readBloodPressure(timeRange: TimeRangeFilter): List<BloodPressureSample>? {
+        return client.readRecords(ReadRecordsRequest(BloodPressureRecord::class, timeRange))
             .records.map { record ->
                 BloodPressureSample(
                     time = record.time.toString(),
@@ -152,8 +163,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readTemperature(timeRange: TimeRangeFilter): List<TemperatureSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(BodyTemperatureRecord::class, timeRange))
+    private suspend fun readTemperature(timeRange: TimeRangeFilter): List<TemperatureSample>? {
+        return client.readRecords(ReadRecordsRequest(BodyTemperatureRecord::class, timeRange))
             .records.map { record ->
                 TemperatureSample(
                     time = record.time.toString(),
@@ -162,8 +173,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readRespiratoryRate(timeRange: TimeRangeFilter): List<RespiratoryRateSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(RespiratoryRateRecord::class, timeRange))
+    private suspend fun readRespiratoryRate(timeRange: TimeRangeFilter): List<RespiratoryRateSample>? {
+        return client.readRecords(ReadRecordsRequest(RespiratoryRateRecord::class, timeRange))
             .records.map { record ->
                 RespiratoryRateSample(
                     time = record.time.toString(),
@@ -172,8 +183,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readBloodGlucose(timeRange: TimeRangeFilter): List<BloodGlucoseSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(BloodGlucoseRecord::class, timeRange))
+    private suspend fun readBloodGlucose(timeRange: TimeRangeFilter): List<BloodGlucoseSample>? {
+        return client.readRecords(ReadRecordsRequest(BloodGlucoseRecord::class, timeRange))
             .records.map { record ->
                 BloodGlucoseSample(
                     time = record.time.toString(),
@@ -182,8 +193,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readWeight(timeRange: TimeRangeFilter): List<WeightSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(WeightRecord::class, timeRange))
+    private suspend fun readWeight(timeRange: TimeRangeFilter): List<WeightSample>? {
+        return client.readRecords(ReadRecordsRequest(WeightRecord::class, timeRange))
             .records.map { record ->
                 WeightSample(
                     time = record.time.toString(),
@@ -192,8 +203,8 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun readHeight(timeRange: TimeRangeFilter): List<HeightSample>? = tryRead {
-        client.readRecords(ReadRecordsRequest(HeightRecord::class, timeRange))
+    private suspend fun readHeight(timeRange: TimeRangeFilter): List<HeightSample>? {
+        return client.readRecords(ReadRecordsRequest(HeightRecord::class, timeRange))
             .records.map { record ->
                 HeightSample(
                     time = record.time.toString(),
@@ -202,11 +213,20 @@ class HealthConnectReader(context: Context) {
             }.ifEmpty { null }
     }
 
-    private suspend fun <T> tryRead(block: suspend () -> T?): T? {
+    private suspend fun <T> tryRead(typeName: String, block: suspend () -> T?): T? {
         return try {
-            block()
+            val result = block()
+            if (result == null) {
+                Log.d(TAG, "[$typeName] no data found")
+            } else if (result is List<*>) {
+                Log.i(TAG, "[$typeName] ${result.size} records read")
+            }
+            result
+        } catch (e: SecurityException) {
+            Log.e(TAG, "[$typeName] permission denied: ${e.message}")
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read health data: ${e.message}")
+            Log.e(TAG, "[$typeName] read failed: ${e.javaClass.simpleName}: ${e.message}", e)
             null
         }
     }

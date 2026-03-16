@@ -47,7 +47,7 @@ class SyncWorker(
         }
 
         val lastSync = appPrefs.getLastSyncTime()
-        val from = if (lastSync > 0) Instant.ofEpochMilli(lastSync) else Instant.now().minusSeconds(86400)
+        val from = if (lastSync > 0) Instant.ofEpochMilli(lastSync) else Instant.now().minus(java.time.Duration.ofDays(7))
         val to = Instant.now()
 
         return try {

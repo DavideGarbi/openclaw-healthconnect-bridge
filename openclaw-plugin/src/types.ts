@@ -8,6 +8,8 @@ export interface HealthConnectConfig {
   authToken: string;
   storagePath: string;
   httpPath: string;
+  httpPort: number;
+  httpBind: string;
   retentionDays: number;
 }
 

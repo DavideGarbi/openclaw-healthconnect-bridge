@@ -23,14 +23,27 @@ This guide walks you through the full setup: installing the plugin on your OpenC
 
 If you already have OpenClaw running, paste this prompt into your OpenClaw chat to have the agent install and configure the plugin for you:
 
-> Install the Health Connect Bridge plugin from the GitHub repo https://github.com/DavideGarbi/openclaw-healthconnect-bridge.
-> 1. Clone the repo to a temp directory
+> Install the Health Connect Bridge plugin from https://github.com/DavideGarbi/openclaw-healthconnect-bridge
+>
+> Steps:
+> 1. Clone the repo to /tmp/health-connect-bridge
 > 2. Copy the `openclaw-plugin/` folder to `~/.openclaw/extensions/health-connect/`
 > 3. Run `npm install` inside that folder
-> 4. Generate a secure auth token with `openssl rand -hex 32`
-> 5. Add the plugin entry to my OpenClaw config (`~/.openclaw/openclaw.json`) under `plugins.entries["health-connect"]` with `enabled: true` and the generated `authToken` in the config
-> 6. Restart the gateway
-> 7. Print the full endpoint URL and the generated token so I can copy them into the Android app
+> 4. Generate a secure auth token: `openssl rand -hex 32`
+> 5. Edit `~/.openclaw/openclaw.json`:
+>    - Find the EXISTING `plugins.entries` object
+>    - ADD a new key `"health-connect"` inside it (do NOT create a second `plugins` key)
+>    - Value: `{ "enabled": true, "config": { "authToken": "<generated-token>" } }`
+> 6. Verify JSON is valid: `python3 -c "import json; json.load(open('<config-path>'))"`
+> 7. Restart the gateway process
+> 8. Verify the plugin loaded: `openclaw plugins list` — should show "health-connect" as "loaded"
+> 9. Print the endpoint URL (http://\<host\>:18790/health-connect/sync) and the auth token
+>
+> IMPORTANT:
+> - The plugin runs its OWN HTTP server on port 18790, NOT on the gateway port
+> - Do NOT use `api.registerGatewayHttpHandler` — it doesn't exist in the SDK
+> - The plugin uses `api.registerService()` for server lifecycle and `api.registerTool()` for the agent tool
+> - The package.json `name` field MUST match the manifest `id` field ("health-connect")
 
 Then skip to [Step 5](#step-5-install-the-android-app).
 
@@ -66,32 +79,26 @@ This will output something like: `a1b2c3d4e5f6...` — save this, you will need 
 
 ### Step 3: Configure the Plugin
 
-Add the plugin to your OpenClaw configuration file (`~/.openclaw/openclaw.json` or wherever your config lives):
+Edit `~/.openclaw/openclaw.json` (or wherever your config lives). **IMPORTANT:** Add `"health-connect"` inside the **existing** `plugins.entries` object — do NOT create a second `plugins` key, or you will overwrite your other plugin configs.
 
 ```json5
 {
   plugins: {
     entries: {
+      // ... your existing plugins stay here ...
       "health-connect": {
         enabled: true,
         config: {
           // REQUIRED: paste the token you generated in Step 2
-          authToken: "a1b2c3d4e5f6...",
-
-          // OPTIONAL: where to store health data files (default shown)
-          storagePath: "~/.openclaw/health-connect-data",
-
-          // OPTIONAL: HTTP endpoint path (default shown)
-          httpPath: "/health-connect/sync",
-
-          // OPTIONAL: how many days of data to keep (default: 90)
-          retentionDays: 90
+          authToken: "a1b2c3d4e5f6..."
         }
       }
     }
   }
 }
 ```
+
+Optional config fields: `httpPort` (default: 18790), `httpBind` (default: "0.0.0.0"), `httpPath` (default: "/health-connect/sync"), `storagePath`, `retentionDays` (default: 90). See [plugin README](openclaw-plugin/README.md#config-reference) for details.
 
 Then restart the OpenClaw gateway:
 
@@ -101,25 +108,24 @@ openclaw gateway restart
 
 ### Step 4: Find Your Endpoint URL
 
-The endpoint URL is your OpenClaw gateway address plus the plugin's HTTP path. It looks like:
+The plugin runs its **own HTTP server** on port 18790 (not the gateway port). The endpoint URL is:
 
 ```
-http://<your-server-ip>:<gateway-port>/health-connect/sync
+http://<your-server-ip>:18790/health-connect/sync
 ```
 
 **How to find it:**
-- If you run OpenClaw locally: `http://localhost:<port>/health-connect/sync` (check your gateway config for the port)
-- If you run OpenClaw on a server: `http://<your-server-ip>:<port>/health-connect/sync`
-- If you use HTTPS with a domain: `https://yourdomain.com/health-connect/sync`
+- Local server, same Wi-Fi: `http://192.168.1.100:18790/health-connect/sync` (use your machine's LAN IP)
+- Remote server: `http://your-server.com:18790/health-connect/sync`
 
-You can verify the plugin is running by opening the URL in a browser (GET request):
+You can verify the plugin is running:
 
 ```bash
-curl http://localhost:<port>/health-connect/sync
+curl http://localhost:18790/health-connect/sync
 # Should return: {"ok":true,"plugin":"health-connect","datesAvailable":0,"latestDate":null}
 ```
 
-**Important:** Your Android phone must be able to reach this URL over the network. If your OpenClaw server runs on your local machine, both devices must be on the same network (Wi-Fi), and you should use your computer's local IP address (e.g. `http://192.168.1.100:<port>/health-connect/sync`), not `localhost`.
+**Important:** Your Android phone must be able to reach this URL over the network. If your OpenClaw server runs on your local machine, both devices must be on the same network (Wi-Fi), and you must use your computer's LAN IP address (e.g. `192.168.1.100`), not `localhost`.
 
 ### Step 5: Install the Android App
 
@@ -143,9 +149,9 @@ If the sync succeeds, you will see "Sync completed successfully" and the "Last s
 ## Architecture
 
 ```
-Android App (Health Connect) --> HTTP POST --> OpenClaw Gateway --> Plugin --> JSON Storage
-                                                                      |
-                                                              Agent Tool (query)
+Android App (Health Connect) --> HTTP POST --> Plugin HTTP Server (:18790) --> JSON Storage
+                                                        |
+                                                Agent Tool (query)
 ```
 
 ## Requirements
@@ -175,7 +181,7 @@ Requires JDK 21.
 
 | Setting | Description | Example |
 |---|---|---|
-| **Endpoint URL** | Full URL of the plugin's sync endpoint on your OpenClaw server | `http://192.168.1.100:3000/health-connect/sync` |
+| **Endpoint URL** | Full URL of the plugin's sync endpoint (uses plugin port, not gateway port) | `http://192.168.1.100:18790/health-connect/sync` |
 | **Bearer Token** | The same `authToken` you configured in the plugin (generated with `openssl rand -hex 32`) | `a1b2c3d4e5f6...` |
 | **Sync Interval** | How often to auto-sync in the background | 15 min / 30 min / 1 hr / 4 hrs / Manual only |
 

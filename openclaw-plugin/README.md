@@ -5,13 +5,15 @@ OpenClaw plugin that receives health data from the Android app via HTTP and make
 ## How It Works
 
 ```
-Android App (Health Connect) --> HTTP POST --> OpenClaw Gateway --> Plugin --> JSON Storage
-                                                                      |
-                                                              Agent Tool (query)
+Android App (Health Connect) --> HTTP POST --> Plugin HTTP Server (:18790) --> JSON Storage
+                                                        |
+                                                Agent Tool (query)
 ```
 
+The plugin runs its **own HTTP server** on a dedicated port (default: 18790), separate from the OpenClaw gateway. It uses `api.registerService()` for lifecycle management and `api.registerTool()` for the agent tool.
+
 1. The Android app reads health data from Health Connect (steps, heart rate, sleep, etc.)
-2. It sends the data as JSON to the plugin's HTTP endpoint (`POST /health-connect/sync`)
+2. It sends the data as JSON to the plugin's HTTP endpoint (`POST http://<host>:18790/health-connect/sync`)
 3. The plugin validates the request (Bearer token auth), deduplicates, and stores the data as daily JSON files
 4. The OpenClaw agent can then query this data using the `health_connect` tool
 
@@ -38,28 +40,34 @@ openssl rand -hex 32
 
 ### 2. Add to your OpenClaw config
 
-Edit `~/.openclaw/openclaw.json` (or wherever your config lives):
+Edit `~/.openclaw/openclaw.json` (or wherever your config lives).
+
+**IMPORTANT:** Add the `"health-connect"` entry inside the **existing** `plugins.entries` object. Do NOT create a second `plugins` key — this will silently overwrite your other plugin configs.
 
 ```json5
 {
   plugins: {
     entries: {
+      // ... your existing plugins (telegram, voice-call, etc.) ...
       "health-connect": {
         enabled: true,
         config: {
           // REQUIRED - paste the token you generated above
           authToken: "your-generated-token-here",
 
-          // OPTIONAL - path to store health data files
-          // Default: ~/.openclaw/health-connect-data
-          storagePath: "~/.openclaw/health-connect-data",
+          // OPTIONAL - port for the plugin's HTTP server (default: 18790)
+          httpPort: 18790,
 
-          // OPTIONAL - HTTP endpoint path
-          // Default: /health-connect/sync
+          // OPTIONAL - bind address (default: "0.0.0.0")
+          httpBind: "0.0.0.0",
+
+          // OPTIONAL - HTTP endpoint path (default: "/health-connect/sync")
           httpPath: "/health-connect/sync",
 
-          // OPTIONAL - how many days of data to keep
-          // Default: 90
+          // OPTIONAL - path to store health data files
+          storagePath: "~/.openclaw/health-connect-data",
+
+          // OPTIONAL - how many days of data to keep (default: 90)
           retentionDays: 90
         }
       }
@@ -77,7 +85,12 @@ openclaw gateway restart
 ### 4. Verify the plugin is running
 
 ```bash
-curl http://localhost:<port>/health-connect/sync
+# Check plugin loaded
+openclaw plugins list
+# Should show "health-connect" as "loaded"
+
+# Check HTTP server is responding
+curl http://localhost:18790/health-connect/sync
 ```
 
 Expected response:
@@ -88,15 +101,15 @@ Expected response:
 
 ### 5. Find your endpoint URL for the Android app
 
-The URL you enter in the Android app is your gateway address plus the HTTP path:
+The URL uses the **plugin's own port** (default 18790), NOT the gateway port:
 
 ```
-http://<your-server-ip-or-domain>:<gateway-port>/health-connect/sync
+http://<your-server-ip>:18790/health-connect/sync
 ```
 
 Examples:
-- Local server, same Wi-Fi: `http://192.168.1.100:3000/health-connect/sync`
-- Remote server with HTTPS: `https://myserver.example.com/health-connect/sync`
+- Local server, same Wi-Fi: `http://192.168.1.100:18790/health-connect/sync`
+- Remote server: `https://myserver.example.com:18790/health-connect/sync`
 
 **Note:** `localhost` will not work from a phone. Use your machine's LAN IP address if running locally.
 
@@ -105,8 +118,10 @@ Examples:
 | Property | Required | Default | Description |
 |---|---|---|---|
 | `authToken` | Yes | - | Bearer token shared with the Android app |
-| `storagePath` | No | `~/.openclaw/health-connect-data` | Directory for daily JSON data files |
+| `httpPort` | No | `18790` | Port for the plugin's own HTTP server |
+| `httpBind` | No | `0.0.0.0` | Bind address for the HTTP server |
 | `httpPath` | No | `/health-connect/sync` | HTTP endpoint path |
+| `storagePath` | No | `~/.openclaw/health-connect-data` | Directory for daily JSON data files |
 | `retentionDays` | No | `90` | Automatically delete data older than this |
 
 ## Sync API
@@ -116,7 +131,7 @@ Examples:
 Receives health data from the Android app. Requires Bearer token auth.
 
 ```
-POST /health-connect/sync
+POST http://<host>:18790/health-connect/sync
 Authorization: Bearer <authToken>
 Content-Type: application/json
 ```
@@ -198,3 +213,9 @@ Health data is stored as one JSON file per day in the `storagePath` directory:
 ```
 
 Each file contains all records for that day plus sync metadata. Duplicate records (same data sent twice) are automatically deduplicated. Files older than `retentionDays` are automatically deleted on each sync.
+
+## Technical Notes
+
+- The plugin creates its own `http.Server` (Node.js `http.createServer`) — it does NOT use `api.registerGatewayHttpHandler()` (which does not exist in the SDK)
+- Server lifecycle is managed via `api.registerService({ id, start, stop })`
+- The `package.json` `name` field MUST match the `openclaw.plugin.json` `id` field (`"health-connect"`)

@@ -1,3 +1,4 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { HealthDataStore } from "./src/storage.js";
@@ -20,6 +21,10 @@ function resolveConfig(raw: unknown): HealthConnectConfig {
         : join(homedir(), ".openclaw", "health-connect-data"),
     httpPath:
       typeof cfg.httpPath === "string" ? cfg.httpPath : "/health-connect/sync",
+    httpPort:
+      typeof cfg.httpPort === "number" ? cfg.httpPort : 18790,
+    httpBind:
+      typeof cfg.httpBind === "string" ? cfg.httpBind : "0.0.0.0",
     retentionDays:
       typeof cfg.retentionDays === "number" ? cfg.retentionDays : 90,
   };
@@ -40,7 +45,6 @@ function validateSyncPayload(body: unknown): { valid: true; payload: SyncPayload
     return { valid: false, error: "'syncedAt' must be an ISO 8601 string" };
   }
 
-  // Basic validation of each record
   for (let i = 0; i < obj.records.length; i++) {
     const r = obj.records[i];
     if (!r || typeof r !== "object" || typeof (r as Record<string, unknown>).type !== "string") {
@@ -56,6 +60,19 @@ function validateSyncPayload(body: unknown): { valid: true; payload: SyncPayload
       syncedAt: obj.syncedAt as string,
     },
   };
+}
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+function jsonResponse(res: ServerResponse, status: number, data: unknown): void {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(data));
 }
 
 const HealthConnectToolSchema = Type.Union([
@@ -104,16 +121,34 @@ const healthConnectPlugin = {
 
     const store = new HealthDataStore(config.storagePath, config.retentionDays);
 
-    // --- HTTP Handler: Sync endpoint ---
-    api.registerGatewayHttpHandler(
-      "POST",
-      config.httpPath,
-      async (req, res) => {
-        // Auth check
+    // --- HTTP Server (own server, not gateway) ---
+    const server = createServer(async (req, res) => {
+      const url = req.url || "/";
+      const method = req.method || "GET";
+
+      // Only handle requests to the configured path
+      if (!url.startsWith(config.httpPath)) {
+        jsonResponse(res, 404, { error: "Not found" });
+        return;
+      }
+
+      // GET — health check (no auth)
+      if (method === "GET") {
+        const dates = store.getAvailableDates();
+        jsonResponse(res, 200, {
+          ok: true,
+          plugin: "health-connect",
+          datesAvailable: dates.length,
+          latestDate: dates.length ? dates[dates.length - 1] : null,
+        });
+        return;
+      }
+
+      // POST — sync endpoint (requires auth)
+      if (method === "POST") {
         const authHeader = req.headers.authorization;
         if (!config.authToken || !authHeader) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Unauthorized" }));
+          jsonResponse(res, 401, { error: "Unauthorized" });
           return;
         }
 
@@ -122,23 +157,17 @@ const healthConnectPlugin = {
           : authHeader.trim();
 
         if (token !== config.authToken) {
-          res.writeHead(403, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Forbidden" }));
+          jsonResponse(res, 403, { error: "Forbidden" });
           return;
         }
 
-        // Parse body
         try {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) {
-            chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-          }
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+          const rawBody = await readBody(req);
+          const body = JSON.parse(rawBody);
 
           const validation = validateSyncPayload(body);
           if (!validation.valid) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: validation.error }));
+            jsonResponse(res, 400, { error: validation.error });
             return;
           }
 
@@ -150,40 +179,62 @@ const healthConnectPlugin = {
             (validation.payload.deviceId ? ` (device: ${validation.payload.deviceId})` : ""),
           );
 
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              ok: true,
-              added: result.added,
-              updated: result.updated,
-              recordsReceived: validation.payload.records.length,
-            }),
-          );
+          jsonResponse(res, 200, {
+            ok: true,
+            added: result.added,
+            updated: result.updated,
+            recordsReceived: validation.payload.records.length,
+          });
         } catch (err) {
           api.logger.error(`[health-connect] Sync error: ${err instanceof Error ? err.message : String(err)}`);
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Internal server error" }));
+          jsonResponse(res, 500, { error: "Internal server error" });
         }
-      },
-    );
+        return;
+      }
 
-    // --- Also register a GET endpoint for health check ---
-    api.registerGatewayHttpHandler(
-      "GET",
-      config.httpPath,
-      async (_req, res) => {
-        const dates = store.getAvailableDates();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            ok: true,
-            plugin: "health-connect",
-            datesAvailable: dates.length,
-            latestDate: dates.length ? dates[dates.length - 1] : null,
-          }),
-        );
+      jsonResponse(res, 405, { error: "Method not allowed" });
+    });
+
+    // --- Register as a service for proper lifecycle management ---
+    api.registerService({
+      id: "health-connect-http",
+      async start() {
+        return new Promise<void>((resolve, reject) => {
+          server.on("error", (err: NodeJS.ErrnoException) => {
+            if (err.code === "EADDRINUSE") {
+              api.logger.warn(`[health-connect] Port ${config.httpPort} in use, attempting cleanup...`);
+              server.close();
+              setTimeout(() => {
+                server.listen(config.httpPort, config.httpBind, () => {
+                  api.logger.info(
+                    `[health-connect] HTTP server listening on ${config.httpBind}:${config.httpPort}${config.httpPath}`,
+                  );
+                  resolve();
+                });
+              }, 1000);
+            } else {
+              api.logger.error(`[health-connect] HTTP server error: ${err.message}`);
+              reject(err);
+            }
+          });
+
+          server.listen(config.httpPort, config.httpBind, () => {
+            api.logger.info(
+              `[health-connect] HTTP server listening on ${config.httpBind}:${config.httpPort}${config.httpPath}`,
+            );
+            resolve();
+          });
+        });
       },
-    );
+      async stop() {
+        return new Promise<void>((resolve) => {
+          server.close(() => {
+            api.logger.info("[health-connect] HTTP server stopped");
+            resolve();
+          });
+        });
+      },
+    });
 
     // --- Agent Tool ---
     api.registerTool({
@@ -232,7 +283,7 @@ const healthConnectPlugin = {
     });
 
     api.logger.info(
-      `[health-connect] Plugin loaded — HTTP endpoint: ${config.httpPath}, storage: ${config.storagePath}`,
+      `[health-connect] Plugin loaded — storage: ${config.storagePath}`,
     );
   },
 };

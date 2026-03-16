@@ -2,7 +2,7 @@
   "id": "health-connect",
   "name": "Health Connect Bridge",
   "description": "Receives health data from Android Health Connect via HTTP and provides agent tools to query it.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -24,6 +24,18 @@
         "description": "HTTP path for the sync endpoint (default: /health-connect/sync)",
         "default": "/health-connect/sync"
       },
+      "httpPort": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535,
+        "default": 18790,
+        "description": "Port for the plugin's HTTP server (default: 18790)"
+      },
+      "httpBind": {
+        "type": "string",
+        "default": "0.0.0.0",
+        "description": "Bind address for the HTTP server (default: 0.0.0.0)"
+      },
       "retentionDays": {
         "type": "integer",
         "minimum": 1,
@@ -38,6 +50,8 @@
     "authToken": { "label": "Auth Token", "sensitive": true },
     "storagePath": { "label": "Storage Path", "placeholder": "~/.openclaw/health-connect-data" },
     "httpPath": { "label": "HTTP Endpoint Path" },
+    "httpPort": { "label": "HTTP Port" },
+    "httpBind": { "label": "HTTP Bind Address" },
     "retentionDays": { "label": "Data Retention (days)" }
   }
 }

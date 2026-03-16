@@ -24,7 +24,9 @@ class OpenClawApp : Application() {
             val token = securePrefs.bearerToken
             val interval = appPrefs.getSyncIntervalMinutes()
 
-            if (url.isNotBlank() && !token.isNullOrBlank() && interval > 0) {
+            val autoSync = appPrefs.getAutoSyncEnabled()
+
+            if (autoSync && url.isNotBlank() && !token.isNullOrBlank() && interval > 0) {
                 SyncScheduler(this@OpenClawApp).schedulePeriodicSync(interval)
             }
         }

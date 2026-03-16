@@ -20,6 +20,7 @@ data class UiState(
     val permissionsGranted: Boolean = false,
     val endpointUrl: String = "",
     val bearerToken: String = "",
+    val autoSyncEnabled: Boolean = false,
     val syncIntervalMinutes: Long = 60L,
     val lastSyncTime: Long = 0L,
     val isSyncing: Boolean = false,
@@ -55,6 +56,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(syncIntervalMinutes = interval) }
             }
         }
+        viewModelScope.launch {
+            appPrefs.autoSyncEnabled.collect { enabled ->
+                _uiState.update { it.copy(autoSyncEnabled = enabled) }
+            }
+        }
         _uiState.update { it.copy(bearerToken = securePrefs.bearerToken ?: "") }
     }
 
@@ -72,14 +78,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         securePrefs.bearerToken = token
     }
 
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(autoSyncEnabled = enabled) }
+        viewModelScope.launch {
+            appPrefs.setAutoSyncEnabled(enabled)
+            if (enabled) {
+                val interval = appPrefs.getSyncIntervalMinutes()
+                syncScheduler.schedulePeriodicSync(interval)
+            } else {
+                syncScheduler.cancelPeriodicSync()
+            }
+        }
+    }
+
     fun saveSyncInterval(minutes: Long) {
         _uiState.update { it.copy(syncIntervalMinutes = minutes) }
         viewModelScope.launch {
             appPrefs.setSyncIntervalMinutes(minutes)
-            if (minutes > 0) {
+            if (_uiState.value.autoSyncEnabled) {
                 syncScheduler.schedulePeriodicSync(minutes)
-            } else {
-                syncScheduler.cancelPeriodicSync()
             }
         }
     }

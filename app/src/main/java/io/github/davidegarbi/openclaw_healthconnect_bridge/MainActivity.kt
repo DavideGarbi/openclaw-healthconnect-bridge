@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     onRequestPermissions = { permissionLauncher.launch(healthPermissions) },
                     onSaveEndpointUrl = viewModel::saveEndpointUrl,
                     onSaveBearerToken = viewModel::saveBearerToken,
+                    onAutoSyncToggled = viewModel::setAutoSyncEnabled,
                     onSyncIntervalChanged = viewModel::saveSyncInterval,
                     onSyncNow = viewModel::syncNow,
                     onInstallHealthConnect = ::openHealthConnectPlayStore

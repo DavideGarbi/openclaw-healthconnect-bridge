@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,6 +24,9 @@ class AppPreferences(private val context: Context) {
 
     val syncIntervalMinutes: Flow<Long>
         get() = context.dataStore.data.map { it[KEY_SYNC_INTERVAL] ?: 60L }
+
+    val autoSyncEnabled: Flow<Boolean>
+        get() = context.dataStore.data.map { it[KEY_AUTO_SYNC_ENABLED] ?: false }
 
     suspend fun getEndpointUrl(): String =
         context.dataStore.data.first()[KEY_ENDPOINT_URL] ?: ""
@@ -45,9 +49,17 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_SYNC_INTERVAL] = minutes }
     }
 
+    suspend fun getAutoSyncEnabled(): Boolean =
+        context.dataStore.data.first()[KEY_AUTO_SYNC_ENABLED] ?: false
+
+    suspend fun setAutoSyncEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_AUTO_SYNC_ENABLED] = enabled }
+    }
+
     companion object {
         private val KEY_ENDPOINT_URL = stringPreferencesKey("endpoint_url")
         private val KEY_LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
         private val KEY_SYNC_INTERVAL = longPreferencesKey("sync_interval_minutes")
+        private val KEY_AUTO_SYNC_ENABLED = booleanPreferencesKey("auto_sync_enabled")
     }
 }

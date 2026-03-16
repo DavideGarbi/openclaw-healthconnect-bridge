@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ fun MainScreen(
     onRequestPermissions: () -> Unit,
     onSaveEndpointUrl: (String) -> Unit,
     onSaveBearerToken: (String) -> Unit,
+    onAutoSyncToggled: (Boolean) -> Unit,
     onSyncIntervalChanged: (Long) -> Unit,
     onSyncNow: () -> Unit,
     onInstallHealthConnect: () -> Unit
@@ -143,16 +145,31 @@ fun MainScreen(
                 }
             }
 
-            // Sync Interval
+            // Background Sync
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Sync Schedule", style = MaterialTheme.typography.titleMedium)
+                    Text("Background Sync", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
 
-                    SyncIntervalDropdown(
-                        selectedMinutes = uiState.syncIntervalMinutes,
-                        onSelected = onSyncIntervalChanged
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Auto sync in background")
+                        Switch(
+                            checked = uiState.autoSyncEnabled,
+                            onCheckedChange = onAutoSyncToggled
+                        )
+                    }
+
+                    if (uiState.autoSyncEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        SyncIntervalDropdown(
+                            selectedMinutes = uiState.syncIntervalMinutes,
+                            onSelected = onSyncIntervalChanged
+                        )
+                    }
                 }
             }
 
@@ -213,7 +230,6 @@ private fun SyncIntervalDropdown(
     onSelected: (Long) -> Unit
 ) {
     val options = listOf(
-        0L to "Manual only",
         15L to "Every 15 minutes",
         30L to "Every 30 minutes",
         60L to "Every 1 hour",

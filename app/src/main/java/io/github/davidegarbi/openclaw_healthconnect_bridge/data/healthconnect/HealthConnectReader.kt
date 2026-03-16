@@ -11,6 +11,7 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -21,7 +22,7 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.Instant
-import java.time.ZoneOffset
+import kotlin.reflect.KClass
 
 class HealthConnectReader(context: Context) {
 
@@ -74,143 +75,158 @@ class HealthConnectReader(context: Context) {
         snapshot
     }
 
+    /**
+     * Generic paginated read: fetches all pages of records for a given type,
+     * maps each record to a domain model, and returns the full list.
+     */
+    private suspend fun <R : Record, T> readAllPages(
+        recordType: KClass<R>,
+        timeRange: TimeRangeFilter,
+        mapper: (R) -> List<T>
+    ): List<T>? {
+        val all = mutableListOf<T>()
+        var pageToken: String? = null
+
+        do {
+            val request = if (pageToken != null) {
+                ReadRecordsRequest(recordType, timeRange, pageToken = pageToken)
+            } else {
+                ReadRecordsRequest(recordType, timeRange)
+            }
+            val response = client.readRecords(request)
+            for (record in response.records) {
+                all.addAll(mapper(record))
+            }
+            pageToken = response.pageToken
+        } while (pageToken != null)
+
+        return all.ifEmpty { null }
+    }
+
     private suspend fun readHeartRate(timeRange: TimeRangeFilter): List<HeartRateSample>? {
-        return client.readRecords(ReadRecordsRequest(HeartRateRecord::class, timeRange))
-            .records.flatMap { record ->
-                record.samples.map { sample ->
-                    HeartRateSample(
-                        time = sample.time.toString(),
-                        bpm = sample.beatsPerMinute
-                    )
-                }
-            }.ifEmpty { null }
+        return readAllPages(HeartRateRecord::class, timeRange) { record ->
+            record.samples.map { sample ->
+                HeartRateSample(
+                    time = sample.time.toString(),
+                    bpm = sample.beatsPerMinute
+                )
+            }
+        }
     }
 
     private suspend fun readSteps(timeRange: TimeRangeFilter): List<StepsSample>? {
-        return client.readRecords(ReadRecordsRequest(StepsRecord::class, timeRange))
-            .records.map { record ->
-                StepsSample(
-                    startTime = record.startTime.toString(),
-                    endTime = record.endTime.toString(),
-                    count = record.count
-                )
-            }.ifEmpty { null }
+        return readAllPages(StepsRecord::class, timeRange) { record ->
+            listOf(StepsSample(
+                startTime = record.startTime.toString(),
+                endTime = record.endTime.toString(),
+                count = record.count
+            ))
+        }
     }
 
     private suspend fun readSleep(timeRange: TimeRangeFilter): List<SleepSession>? {
-        return client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, timeRange))
-            .records.map { record ->
-                SleepSession(
-                    startTime = record.startTime.toString(),
-                    endTime = record.endTime.toString(),
-                    title = record.title
-                )
-            }.ifEmpty { null }
+        return readAllPages(SleepSessionRecord::class, timeRange) { record ->
+            listOf(SleepSession(
+                startTime = record.startTime.toString(),
+                endTime = record.endTime.toString(),
+                title = record.title
+            ))
+        }
     }
 
     private suspend fun readCalories(timeRange: TimeRangeFilter): List<CaloriesSample>? {
-        return client.readRecords(ReadRecordsRequest(TotalCaloriesBurnedRecord::class, timeRange))
-            .records.map { record ->
-                CaloriesSample(
-                    startTime = record.startTime.toString(),
-                    endTime = record.endTime.toString(),
-                    kcal = record.energy.inKilocalories
-                )
-            }.ifEmpty { null }
+        return readAllPages(TotalCaloriesBurnedRecord::class, timeRange) { record ->
+            listOf(CaloriesSample(
+                startTime = record.startTime.toString(),
+                endTime = record.endTime.toString(),
+                kcal = record.energy.inKilocalories
+            ))
+        }
     }
 
     private suspend fun readSpO2(timeRange: TimeRangeFilter): List<SpO2Sample>? {
-        return client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, timeRange))
-            .records.map { record ->
-                SpO2Sample(
-                    time = record.time.toString(),
-                    percentage = record.percentage.value
-                )
-            }.ifEmpty { null }
+        return readAllPages(OxygenSaturationRecord::class, timeRange) { record ->
+            listOf(SpO2Sample(
+                time = record.time.toString(),
+                percentage = record.percentage.value
+            ))
+        }
     }
 
     private suspend fun readDistance(timeRange: TimeRangeFilter): List<DistanceSample>? {
-        return client.readRecords(ReadRecordsRequest(DistanceRecord::class, timeRange))
-            .records.map { record ->
-                DistanceSample(
-                    startTime = record.startTime.toString(),
-                    endTime = record.endTime.toString(),
-                    meters = record.distance.inMeters
-                )
-            }.ifEmpty { null }
+        return readAllPages(DistanceRecord::class, timeRange) { record ->
+            listOf(DistanceSample(
+                startTime = record.startTime.toString(),
+                endTime = record.endTime.toString(),
+                meters = record.distance.inMeters
+            ))
+        }
     }
 
     private suspend fun readExercise(timeRange: TimeRangeFilter): List<ExerciseSession>? {
-        return client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, timeRange))
-            .records.map { record ->
-                ExerciseSession(
-                    startTime = record.startTime.toString(),
-                    endTime = record.endTime.toString(),
-                    type = record.exerciseType,
-                    title = record.title
-                )
-            }.ifEmpty { null }
+        return readAllPages(ExerciseSessionRecord::class, timeRange) { record ->
+            listOf(ExerciseSession(
+                startTime = record.startTime.toString(),
+                endTime = record.endTime.toString(),
+                type = record.exerciseType,
+                title = record.title
+            ))
+        }
     }
 
     private suspend fun readBloodPressure(timeRange: TimeRangeFilter): List<BloodPressureSample>? {
-        return client.readRecords(ReadRecordsRequest(BloodPressureRecord::class, timeRange))
-            .records.map { record ->
-                BloodPressureSample(
-                    time = record.time.toString(),
-                    systolic = record.systolic.inMillimetersOfMercury,
-                    diastolic = record.diastolic.inMillimetersOfMercury
-                )
-            }.ifEmpty { null }
+        return readAllPages(BloodPressureRecord::class, timeRange) { record ->
+            listOf(BloodPressureSample(
+                time = record.time.toString(),
+                systolic = record.systolic.inMillimetersOfMercury,
+                diastolic = record.diastolic.inMillimetersOfMercury
+            ))
+        }
     }
 
     private suspend fun readTemperature(timeRange: TimeRangeFilter): List<TemperatureSample>? {
-        return client.readRecords(ReadRecordsRequest(BodyTemperatureRecord::class, timeRange))
-            .records.map { record ->
-                TemperatureSample(
-                    time = record.time.toString(),
-                    celsius = record.temperature.inCelsius
-                )
-            }.ifEmpty { null }
+        return readAllPages(BodyTemperatureRecord::class, timeRange) { record ->
+            listOf(TemperatureSample(
+                time = record.time.toString(),
+                celsius = record.temperature.inCelsius
+            ))
+        }
     }
 
     private suspend fun readRespiratoryRate(timeRange: TimeRangeFilter): List<RespiratoryRateSample>? {
-        return client.readRecords(ReadRecordsRequest(RespiratoryRateRecord::class, timeRange))
-            .records.map { record ->
-                RespiratoryRateSample(
-                    time = record.time.toString(),
-                    rpm = record.rate
-                )
-            }.ifEmpty { null }
+        return readAllPages(RespiratoryRateRecord::class, timeRange) { record ->
+            listOf(RespiratoryRateSample(
+                time = record.time.toString(),
+                rpm = record.rate
+            ))
+        }
     }
 
     private suspend fun readBloodGlucose(timeRange: TimeRangeFilter): List<BloodGlucoseSample>? {
-        return client.readRecords(ReadRecordsRequest(BloodGlucoseRecord::class, timeRange))
-            .records.map { record ->
-                BloodGlucoseSample(
-                    time = record.time.toString(),
-                    mmolPerL = record.level.inMillimolesPerLiter
-                )
-            }.ifEmpty { null }
+        return readAllPages(BloodGlucoseRecord::class, timeRange) { record ->
+            listOf(BloodGlucoseSample(
+                time = record.time.toString(),
+                mmolPerL = record.level.inMillimolesPerLiter
+            ))
+        }
     }
 
     private suspend fun readWeight(timeRange: TimeRangeFilter): List<WeightSample>? {
-        return client.readRecords(ReadRecordsRequest(WeightRecord::class, timeRange))
-            .records.map { record ->
-                WeightSample(
-                    time = record.time.toString(),
-                    kg = record.weight.inKilograms
-                )
-            }.ifEmpty { null }
+        return readAllPages(WeightRecord::class, timeRange) { record ->
+            listOf(WeightSample(
+                time = record.time.toString(),
+                kg = record.weight.inKilograms
+            ))
+        }
     }
 
     private suspend fun readHeight(timeRange: TimeRangeFilter): List<HeightSample>? {
-        return client.readRecords(ReadRecordsRequest(HeightRecord::class, timeRange))
-            .records.map { record ->
-                HeightSample(
-                    time = record.time.toString(),
-                    meters = record.height.inMeters
-                )
-            }.ifEmpty { null }
+        return readAllPages(HeightRecord::class, timeRange) { record ->
+            listOf(HeightSample(
+                time = record.time.toString(),
+                meters = record.height.inMeters
+            ))
+        }
     }
 
     private suspend fun <T> tryRead(typeName: String, block: suspend () -> T?): T? {

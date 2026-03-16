@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.health.connect.client.HealthConnectClient
@@ -97,8 +96,14 @@ class MainActivity : ComponentActivity() {
         viewModel.syncScheduler.getOneShotSyncStatus().observe(this) { workInfos ->
             val info = workInfos?.firstOrNull() ?: return@observe
             when (info.state) {
-                WorkInfo.State.SUCCEEDED -> viewModel.onSyncComplete(success = true)
-                WorkInfo.State.FAILED -> viewModel.onSyncComplete(success = false)
+                WorkInfo.State.SUCCEEDED -> {
+                    val msg = info.outputData.getString(SyncWorker.KEY_MESSAGE)
+                    viewModel.onSyncResult(success = true, message = msg)
+                }
+                WorkInfo.State.FAILED -> {
+                    val error = info.outputData.getString(SyncWorker.KEY_ERROR)
+                    viewModel.onSyncResult(success = false, message = error)
+                }
                 WorkInfo.State.RUNNING -> { /* already showing spinner */ }
                 else -> { /* enqueued, blocked, cancelled */ }
             }

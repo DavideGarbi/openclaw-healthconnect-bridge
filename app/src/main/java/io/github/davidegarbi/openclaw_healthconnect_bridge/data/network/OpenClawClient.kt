@@ -16,7 +16,7 @@ object OpenClawClient {
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
-    fun create(baseUrl: String, bearerToken: String): OpenClawApi {
+    fun create(bearerToken: String): OpenClawApi {
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
                 .addHeader("Authorization", "Bearer $bearerToken")
@@ -32,13 +32,14 @@ object OpenClawClient {
         val okHttp = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
 
+        // Base URL is a dummy — we use @Url for the actual endpoint
         val retrofit = Retrofit.Builder()
-            .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
+            .baseUrl("http://localhost/")
             .client(okHttp)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()

@@ -112,7 +112,7 @@ fun MainScreen(
                         value = editingUrl,
                         onValueChange = { editingUrl = it },
                         label = { Text("Endpoint URL") },
-                        placeholder = { Text("https://your-server.com/api/") },
+                        placeholder = { Text("http://192.168.1.100:18790/health-connect/sync") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth()
@@ -172,7 +172,12 @@ fun MainScreen(
 
                     uiState.syncMessage?.let {
                         Spacer(Modifier.height(4.dp))
-                        Text(it, color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = it,
+                            color = if (uiState.syncError) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
 
                     Spacer(Modifier.height(8.dp))

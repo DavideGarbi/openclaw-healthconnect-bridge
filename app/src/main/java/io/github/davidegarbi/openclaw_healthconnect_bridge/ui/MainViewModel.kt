@@ -8,6 +8,7 @@ import io.github.davidegarbi.openclaw_healthconnect_bridge.data.healthconnect.He
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.AppPreferences
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.SecurePreferences
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.sync.SyncScheduler
+import io.github.davidegarbi.openclaw_healthconnect_bridge.data.sync.SyncWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +23,8 @@ data class UiState(
     val syncIntervalMinutes: Long = 60L,
     val lastSyncTime: Long = 0L,
     val isSyncing: Boolean = false,
-    val syncMessage: String? = null
+    val syncMessage: String? = null,
+    val syncError: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -83,15 +85,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun syncNow() {
-        _uiState.update { it.copy(isSyncing = true, syncMessage = null) }
+        _uiState.update { it.copy(isSyncing = true, syncMessage = null, syncError = false) }
         syncScheduler.syncNow()
     }
 
-    fun onSyncComplete(success: Boolean) {
+    fun onSyncResult(success: Boolean, message: String?) {
         _uiState.update {
             it.copy(
                 isSyncing = false,
-                syncMessage = if (success) "Sync completed successfully" else "Sync failed"
+                syncError = !success,
+                syncMessage = message ?: if (success) "Sync completed successfully" else "Sync failed"
             )
         }
     }

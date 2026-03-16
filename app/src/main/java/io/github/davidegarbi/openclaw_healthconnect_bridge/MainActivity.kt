@@ -1,12 +1,17 @@
 package io.github.davidegarbi.openclaw_healthconnect_bridge
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -58,12 +63,17 @@ class MainActivity : ComponentActivity() {
         viewModel.onPermissionsResult(granted.containsAll(healthPermissions))
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or not, sync will still work — notification just won't show */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         viewModel = ViewModelProvider(this)[MainViewModel::class.java]
 
         checkPermissionsIfAvailable()
+        requestNotificationPermissionIfNeeded()
         observeSyncStatus()
 
         setContent {
@@ -106,6 +116,16 @@ class MainActivity : ComponentActivity() {
                 }
                 WorkInfo.State.RUNNING -> { /* already showing spinner */ }
                 else -> { /* enqueued, blocked, cancelled */ }
+            }
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

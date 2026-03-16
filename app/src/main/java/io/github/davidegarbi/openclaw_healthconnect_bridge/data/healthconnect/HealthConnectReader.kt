@@ -86,19 +86,28 @@ class HealthConnectReader(context: Context) {
     ): List<T>? {
         val all = mutableListOf<T>()
         var pageToken: String? = null
+        var pageCount = 0
 
         do {
-            val request = if (pageToken != null) {
-                ReadRecordsRequest(recordType, timeRange, pageToken = pageToken)
-            } else {
-                ReadRecordsRequest(recordType, timeRange)
-            }
+            val request = ReadRecordsRequest(
+                recordType = recordType,
+                timeRangeFilter = timeRange,
+                pageToken = pageToken
+            )
             val response = client.readRecords(request)
             for (record in response.records) {
                 all.addAll(mapper(record))
             }
+            pageCount++
             pageToken = response.pageToken
+            if (pageToken != null) {
+                Log.d(TAG, "[${recordType.simpleName}] page $pageCount done (${all.size} records so far), fetching next page...")
+            }
         } while (pageToken != null)
+
+        if (pageCount > 1) {
+            Log.i(TAG, "[${recordType.simpleName}] fetched $pageCount pages total")
+        }
 
         return all.ifEmpty { null }
     }

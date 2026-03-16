@@ -82,7 +82,8 @@ class SyncWorker(
             if (response.isSuccessful) {
                 val body = response.body()
                 appPrefs.setLastSyncTime(to.toEpochMilli())
-                val msg = "Sync successful: ${body?.added ?: payload.records.size} records synced"
+                val newRecords = body?.added ?: 0
+                val msg = "Sync successful: ${payload.records.size} sent, $newRecords new"
                 Log.i(TAG, msg)
                 Result.success(workDataOf(KEY_MESSAGE to msg))
             } else {

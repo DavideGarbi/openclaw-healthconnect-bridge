@@ -1,0 +1,49 @@
+name: Bug Report
+description: Report a bug in the app
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      placeholder: A clear description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the app
+        2. Go to '...'
+        3. Tap on '...'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What you expected to happen.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "e.g. Pixel 7, Samsung Galaxy S24"
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version
+      placeholder: "e.g. 14"
+  - type: input
+    id: health-connect-version
+    attributes:
+      label: Health Connect version
+      placeholder: "e.g. from Play Store"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      placeholder: Paste any relevant logs or attach screenshots.

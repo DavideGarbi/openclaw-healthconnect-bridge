@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.OpenClaw_HealthConnect_Bridge" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>

@@ -86,7 +86,10 @@ class MainActivity : ComponentActivity() {
                     onSaveBearerToken = viewModel::saveBearerToken,
                     onAutoSyncToggled = viewModel::setAutoSyncEnabled,
                     onSyncIntervalChanged = viewModel::saveSyncInterval,
-                    onSyncNow = viewModel::syncNow,
+                    onBackgroundSyncRangeChanged = viewModel::saveBackgroundSyncRange,
+                    onSyncNowClicked = viewModel::showSyncRangeSheet,
+                    onSyncRangeSelected = viewModel::syncNowWithRange,
+                    onSyncRangeSheetDismissed = viewModel::dismissSyncRangeSheet,
                     onInstallHealthConnect = ::openHealthConnectPlayStore
                 )
             }

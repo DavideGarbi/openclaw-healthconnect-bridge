@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 
 class SyncScheduler(context: Context) {
@@ -38,10 +39,17 @@ class SyncScheduler(context: Context) {
         workManager.cancelUniqueWork(SyncWorker.WORK_NAME_PERIODIC)
     }
 
-    fun syncNow() {
+    fun syncNow(rangeHours: Long? = null) {
+        val inputData = if (rangeHours != null) {
+            workDataOf(SyncWorker.KEY_RANGE_HOURS to rangeHours)
+        } else {
+            workDataOf()
+        }
+
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraint)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+            .setInputData(inputData)
             .build()
 
         workManager.enqueueUniqueWork(

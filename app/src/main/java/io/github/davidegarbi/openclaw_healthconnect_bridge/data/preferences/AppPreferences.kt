@@ -28,6 +28,12 @@ class AppPreferences(private val context: Context) {
     val autoSyncEnabled: Flow<Boolean>
         get() = context.dataStore.data.map { it[KEY_AUTO_SYNC_ENABLED] ?: false }
 
+    val backgroundSyncRangeHours: Flow<Long>
+        get() = context.dataStore.data.map { it[KEY_BG_SYNC_RANGE_HOURS] ?: 24L }
+
+    val lastManualSyncRangeHours: Flow<Long>
+        get() = context.dataStore.data.map { it[KEY_LAST_MANUAL_RANGE_HOURS] ?: 24L }
+
     suspend fun getEndpointUrl(): String =
         context.dataStore.data.first()[KEY_ENDPOINT_URL] ?: ""
 
@@ -56,10 +62,26 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_AUTO_SYNC_ENABLED] = enabled }
     }
 
+    suspend fun getBackgroundSyncRangeHours(): Long =
+        context.dataStore.data.first()[KEY_BG_SYNC_RANGE_HOURS] ?: 24L
+
+    suspend fun setBackgroundSyncRangeHours(hours: Long) {
+        context.dataStore.edit { it[KEY_BG_SYNC_RANGE_HOURS] = hours }
+    }
+
+    suspend fun getLastManualSyncRangeHours(): Long =
+        context.dataStore.data.first()[KEY_LAST_MANUAL_RANGE_HOURS] ?: 24L
+
+    suspend fun setLastManualSyncRangeHours(hours: Long) {
+        context.dataStore.edit { it[KEY_LAST_MANUAL_RANGE_HOURS] = hours }
+    }
+
     companion object {
         private val KEY_ENDPOINT_URL = stringPreferencesKey("endpoint_url")
         private val KEY_LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
         private val KEY_SYNC_INTERVAL = longPreferencesKey("sync_interval_minutes")
         private val KEY_AUTO_SYNC_ENABLED = booleanPreferencesKey("auto_sync_enabled")
+        private val KEY_BG_SYNC_RANGE_HOURS = longPreferencesKey("bg_sync_range_hours")
+        private val KEY_LAST_MANUAL_RANGE_HOURS = longPreferencesKey("last_manual_sync_range_hours")
     }
 }

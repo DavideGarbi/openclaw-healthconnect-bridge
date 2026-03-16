@@ -8,7 +8,6 @@ import io.github.davidegarbi.openclaw_healthconnect_bridge.data.healthconnect.He
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.AppPreferences
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.SecurePreferences
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.sync.SyncScheduler
-import io.github.davidegarbi.openclaw_healthconnect_bridge.data.sync.SyncWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,10 +21,14 @@ data class UiState(
     val bearerToken: String = "",
     val autoSyncEnabled: Boolean = false,
     val syncIntervalMinutes: Long = 60L,
+    val backgroundSyncRangeHours: Long = 24L,
     val lastSyncTime: Long = 0L,
     val isSyncing: Boolean = false,
     val syncMessage: String? = null,
-    val syncError: Boolean = false
+    val syncError: Boolean = false,
+    val showSyncRangeSheet: Boolean = false,
+    val lastManualSyncRangeHours: Long = 24L,
+    val syncingRangeLabel: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -59,6 +62,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             appPrefs.autoSyncEnabled.collect { enabled ->
                 _uiState.update { it.copy(autoSyncEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            appPrefs.backgroundSyncRangeHours.collect { hours ->
+                _uiState.update { it.copy(backgroundSyncRangeHours = hours) }
+            }
+        }
+        viewModelScope.launch {
+            appPrefs.lastManualSyncRangeHours.collect { hours ->
+                _uiState.update { it.copy(lastManualSyncRangeHours = hours) }
             }
         }
         _uiState.update { it.copy(bearerToken = securePrefs.bearerToken ?: "") }
@@ -101,9 +114,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun syncNow() {
-        _uiState.update { it.copy(isSyncing = true, syncMessage = null, syncError = false) }
-        syncScheduler.syncNow()
+    fun saveBackgroundSyncRange(hours: Long) {
+        _uiState.update { it.copy(backgroundSyncRangeHours = hours) }
+        viewModelScope.launch { appPrefs.setBackgroundSyncRangeHours(hours) }
+    }
+
+    fun showSyncRangeSheet() {
+        _uiState.update { it.copy(showSyncRangeSheet = true) }
+    }
+
+    fun dismissSyncRangeSheet() {
+        _uiState.update { it.copy(showSyncRangeSheet = false) }
+    }
+
+    fun syncNowWithRange(rangeHours: Long) {
+        val label = when (rangeHours) {
+            24L -> "last 24 hours"
+            168L -> "last 7 days"
+            720L -> "last 30 days"
+            2160L -> "last 90 days"
+            else -> "last ${rangeHours}h"
+        }
+        _uiState.update {
+            it.copy(
+                showSyncRangeSheet = false,
+                isSyncing = true,
+                syncMessage = null,
+                syncError = false,
+                syncingRangeLabel = label
+            )
+        }
+        viewModelScope.launch {
+            appPrefs.setLastManualSyncRangeHours(rangeHours)
+        }
+        syncScheduler.syncNow(rangeHours)
     }
 
     fun onSyncResult(success: Boolean, message: String?) {
@@ -111,7 +155,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 isSyncing = false,
                 syncError = !success,
-                syncMessage = message ?: if (success) "Sync completed successfully" else "Sync failed"
+                syncMessage = message ?: if (success) "Sync completed successfully" else "Sync failed",
+                syncingRangeLabel = null
             )
         }
     }

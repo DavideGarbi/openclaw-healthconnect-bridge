@@ -46,9 +46,16 @@ class SyncWorker(
             Log.w(TAG, "Could not set foreground: ${e.message}")
         }
 
-        val lastSync = appPrefs.getLastSyncTime()
-        val from = if (lastSync > 0) Instant.ofEpochMilli(lastSync) else Instant.now().minus(java.time.Duration.ofDays(7))
+        // Manual sync passes a specific range; background sync uses the configured default
+        val rangeHours = inputData.getLong(KEY_RANGE_HOURS, 0L)
         val to = Instant.now()
+        val from = if (rangeHours > 0) {
+            to.minus(java.time.Duration.ofHours(rangeHours))
+        } else {
+            // Background sync: use configured range (default 24h)
+            val bgRange = appPrefs.getBackgroundSyncRangeHours()
+            to.minus(java.time.Duration.ofHours(bgRange))
+        }
 
         return try {
             Log.i(TAG, "Starting sync: reading health data from ${from} to ${to}")
@@ -179,5 +186,6 @@ class SyncWorker(
         const val WORK_NAME_ONE_SHOT = "health_connect_one_shot_sync"
         const val KEY_ERROR = "sync_error"
         const val KEY_MESSAGE = "sync_message"
+        const val KEY_RANGE_HOURS = "sync_range_hours"
     }
 }

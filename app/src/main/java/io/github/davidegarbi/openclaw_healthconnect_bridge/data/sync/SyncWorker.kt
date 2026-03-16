@@ -7,7 +7,6 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.healthconnect.HealthConnectReader
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.network.OpenClawClient
-import io.github.davidegarbi.openclaw_healthconnect_bridge.data.network.SyncMetadata
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.network.SyncPayload
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.AppPreferences
 import io.github.davidegarbi.openclaw_healthconnect_bridge.data.preferences.SecurePreferences
@@ -43,26 +42,10 @@ class SyncWorker(
                 Settings.Secure.ANDROID_ID
             )
 
-            val payload = SyncPayload(
-                metadata = SyncMetadata(
-                    deviceId = deviceId,
-                    syncTimestamp = Instant.now().toString(),
-                    dataFrom = from.toString(),
-                    dataTo = to.toString()
-                ),
-                heartRate = snapshot.heartRate,
-                steps = snapshot.steps,
-                sleep = snapshot.sleep,
-                calories = snapshot.calories,
-                spo2 = snapshot.spo2,
-                distance = snapshot.distance,
-                exercise = snapshot.exercise,
-                bloodPressure = snapshot.bloodPressure,
-                temperature = snapshot.temperature,
-                respiratoryRate = snapshot.respiratoryRate,
-                bloodGlucose = snapshot.bloodGlucose,
-                weight = snapshot.weight,
-                height = snapshot.height
+            val payload = SyncPayload.fromSnapshot(
+                snapshot = snapshot,
+                deviceId = deviceId,
+                syncedAt = Instant.now().toString()
             )
 
             val api = OpenClawClient.create(endpointUrl, bearerToken)
@@ -70,7 +53,7 @@ class SyncWorker(
 
             if (response.isSuccessful) {
                 appPrefs.setLastSyncTime(to.toEpochMilli())
-                Log.i(TAG, "Sync successful")
+                Log.i(TAG, "Sync successful: ${payload.records.size} records sent")
                 Result.success()
             } else {
                 Log.w(TAG, "Sync failed: HTTP ${response.code()}")

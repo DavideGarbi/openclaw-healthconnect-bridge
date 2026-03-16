@@ -1,0 +1,12 @@
+{
+  "name": "health-connect",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for Android Health Connect integration",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48"
+  }
+}

@@ -85,7 +85,18 @@ cd openclaw-healthconnect-bridge
 - **Preferences**: DataStore + EncryptedSharedPreferences
 - **Health Data**: Health Connect Client SDK
 
-## Project Structure
+## Repository Structure
+
+This repo contains both the Android app and the OpenClaw server-side plugin:
+
+```
+openclaw-healthconnect-bridge/
+├── app/                    # Android app (Kotlin)
+├── openclaw-plugin/        # OpenClaw server-side plugin (TypeScript)
+├── ...
+```
+
+### Android App
 
 ```
 app/src/main/java/io/github/davidegarbi/openclaw_healthconnect_bridge/
@@ -112,6 +123,10 @@ app/src/main/java/io/github/davidegarbi/openclaw_healthconnect_bridge/
         ├── Color.kt
         └── Theme.kt
 ```
+
+### OpenClaw Plugin
+
+See [`openclaw-plugin/README.md`](openclaw-plugin/README.md) for full plugin documentation including the sync API, supported record types, and agent tool usage.
 
 ## Contributing
 

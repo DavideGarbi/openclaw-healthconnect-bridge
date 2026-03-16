@@ -1,5 +1,6 @@
 package io.github.davidegarbi.openclaw_healthconnect_bridge.data.network
 
+import io.github.davidegarbi.openclaw_healthconnect_bridge.BuildConfig
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.Interceptor
@@ -24,7 +25,8 @@ object OpenClawClient {
         }
 
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+                    else HttpLoggingInterceptor.Level.NONE
         }
 
         val okHttp = OkHttpClient.Builder()

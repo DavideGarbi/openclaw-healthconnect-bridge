@@ -2,9 +2,41 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { HealthDataStore } from "./src/storage.js";
-import type { HealthConnectConfig, SyncPayload } from "./src/types.js";
+import { AlertManager } from "./src/alerts.js";
+import type { HealthConnectConfig, SyncPayload, ThresholdsConfig } from "./src/types.js";
 import { homedir } from "os";
 import { join } from "path";
+
+const DEFAULT_THRESHOLDS: ThresholdsConfig = {
+  heartRateHigh: { enabled: false, value: 170, description: "BPM above this at rest triggers alert" },
+  heartRateLow: { enabled: false, value: 45, description: "BPM below this triggers alert" },
+  spo2Low: { enabled: false, value: 92, description: "Blood oxygen % below this triggers alert" },
+  sleepLow: { enabled: false, value: 5.0, description: "Hours of sleep below this triggers alert" },
+  sleepHigh: { enabled: false, value: 12.0, description: "Hours of sleep above this triggers alert" },
+  bodyTempHigh: { enabled: false, value: 38.5, description: "Body temperature °C above this triggers alert" },
+  bodyTempLow: { enabled: false, value: 35.0, description: "Body temperature °C below this triggers alert" },
+  noSyncTimeout: { enabled: false, value: 120, description: "Minutes without a sync during daytime (8:00-23:00) triggers alert" },
+};
+
+function resolveThresholds(raw: unknown): ThresholdsConfig {
+  const t = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+
+  const result = { ...DEFAULT_THRESHOLDS };
+  for (const key of Object.keys(DEFAULT_THRESHOLDS) as Array<keyof ThresholdsConfig>) {
+    const entry = t[key];
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      const e = entry as Record<string, unknown>;
+      result[key] = {
+        enabled: typeof e.enabled === "boolean" ? e.enabled : DEFAULT_THRESHOLDS[key].enabled,
+        value: typeof e.value === "number" ? e.value : DEFAULT_THRESHOLDS[key].value,
+        description: DEFAULT_THRESHOLDS[key].description,
+      };
+    }
+  }
+  return result;
+}
 
 function resolveConfig(raw: unknown): HealthConnectConfig {
   const cfg =
@@ -12,13 +44,15 @@ function resolveConfig(raw: unknown): HealthConnectConfig {
       ? (raw as Record<string, unknown>)
       : {};
 
+  const storagePath =
+    typeof cfg.storagePath === "string"
+      ? cfg.storagePath
+      : join(homedir(), ".openclaw", "health-connect-data");
+
   return {
     enabled: typeof cfg.enabled === "boolean" ? cfg.enabled : true,
     authToken: typeof cfg.authToken === "string" ? cfg.authToken : "",
-    storagePath:
-      typeof cfg.storagePath === "string"
-        ? cfg.storagePath
-        : join(homedir(), ".openclaw", "health-connect-data"),
+    storagePath,
     httpPath:
       typeof cfg.httpPath === "string" ? cfg.httpPath : "/health-connect/sync",
     httpPort:
@@ -27,6 +61,11 @@ function resolveConfig(raw: unknown): HealthConnectConfig {
       typeof cfg.httpBind === "string" ? cfg.httpBind : "0.0.0.0",
     retentionDays:
       typeof cfg.retentionDays === "number" ? cfg.retentionDays : 90,
+    thresholds: resolveThresholds(cfg.thresholds),
+    alertCooldownMinutes:
+      typeof cfg.alertCooldownMinutes === "number" ? cfg.alertCooldownMinutes : 30,
+    alertsPath:
+      typeof cfg.alertsPath === "string" ? cfg.alertsPath : join(storagePath, "alerts"),
   };
 }
 
@@ -94,6 +133,14 @@ const HealthConnectToolSchema = Type.Union([
     action: Type.Literal("dates"),
     description: Type.Optional(Type.String()),
   }),
+  Type.Object({
+    action: Type.Literal("alerts"),
+    description: Type.Optional(Type.String()),
+  }),
+  Type.Object({
+    action: Type.Literal("thresholds"),
+    description: Type.Optional(Type.String()),
+  }),
 ]);
 
 const healthConnectPlugin = {
@@ -120,6 +167,11 @@ const healthConnectPlugin = {
     }
 
     const store = new HealthDataStore(config.storagePath, config.retentionDays);
+    const alertManager = new AlertManager(
+      config.alertsPath,
+      config.thresholds,
+      config.alertCooldownMinutes,
+    );
 
     // --- HTTP Server (own server, not gateway) ---
     const server = createServer(async (req, res) => {
@@ -173,9 +225,27 @@ const healthConnectPlugin = {
 
           const result = store.ingest(validation.payload);
 
+          // Check thresholds on incoming records
+          let alertsGenerated = 0;
+          if (validation.payload.records.length > 0) {
+            try {
+              alertsGenerated = alertManager.checkRecords(validation.payload.records);
+              if (alertsGenerated > 0) {
+                api.logger.warn(
+                  `[health-connect] ${alertsGenerated} health alert(s) triggered`,
+                );
+              }
+            } catch (err) {
+              api.logger.error(
+                `[health-connect] Alert check error: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
+
           api.logger.info(
             `[health-connect] Sync received: ${validation.payload.records.length} records, ` +
             `${result.added} added, ${result.updated} days updated` +
+            (alertsGenerated > 0 ? `, ${alertsGenerated} alerts` : "") +
             (validation.payload.deviceId ? ` (device: ${validation.payload.deviceId})` : ""),
           );
 
@@ -184,6 +254,7 @@ const healthConnectPlugin = {
             added: result.added,
             updated: result.updated,
             recordsReceived: validation.payload.records.length,
+            alertsGenerated,
           });
         } catch (err) {
           api.logger.error(`[health-connect] Sync error: ${err instanceof Error ? err.message : String(err)}`);
@@ -241,7 +312,7 @@ const healthConnectPlugin = {
       name: "health_connect",
       label: "Health Connect",
       description:
-        "Query health data from Android Health Connect. Supports: steps, heart_rate, sleep, calories_burned, distance, weight, exercise, blood_oxygen, body_temperature, blood_pressure, respiratory_rate, blood_glucose, height. Use action='today' for a quick daily summary, action='query' for specific data, action='dates' to list available dates.",
+        "Query health data from Android Health Connect. Supports: steps, heart_rate, sleep, calories_burned, distance, weight, exercise, blood_oxygen, body_temperature, blood_pressure, respiratory_rate, blood_glucose, height. Actions: 'today' (daily summary), 'query' (specific data), 'dates' (available dates), 'alerts' (pending health alerts), 'thresholds' (current alert thresholds config).",
       parameters: HealthConnectToolSchema,
       async execute(_toolCallId, params) {
         const json = (payload: unknown) => ({
@@ -275,6 +346,35 @@ const healthConnectPlugin = {
             });
           }
 
+          if (params.action === "alerts") {
+            const unread = alertManager.getUnreadAlerts();
+            return json({
+              unreadAlerts: unread,
+              count: unread.length,
+              message: unread.length === 0
+                ? "No pending health alerts"
+                : `${unread.length} health alert(s) found`,
+            });
+          }
+
+          if (params.action === "thresholds") {
+            const thresholds = alertManager.getThresholds();
+            const enabled = Object.entries(thresholds)
+              .filter(([, v]) => v.enabled)
+              .map(([k, v]) => ({ name: k, ...v }));
+            const disabled = Object.entries(thresholds)
+              .filter(([, v]) => !v.enabled)
+              .map(([k, v]) => ({ name: k, ...v }));
+            return json({
+              alertCooldownMinutes: config.alertCooldownMinutes,
+              enabledThresholds: enabled,
+              disabledThresholds: disabled,
+              message: enabled.length === 0
+                ? "No alert thresholds are currently enabled. Configure them in the plugin config under 'thresholds'."
+                : `${enabled.length} threshold(s) active`,
+            });
+          }
+
           return json({ error: "Unknown action" });
         } catch (err) {
           return json({ error: err instanceof Error ? err.message : String(err) });
@@ -283,7 +383,7 @@ const healthConnectPlugin = {
     });
 
     api.logger.info(
-      `[health-connect] Plugin loaded — storage: ${config.storagePath}`,
+      `[health-connect] Plugin loaded — storage: ${config.storagePath}, alerts: ${config.alertsPath}`,
     );
   },
 };

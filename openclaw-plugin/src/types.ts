@@ -3,6 +3,23 @@
  * The Android app sends these via HTTP POST to the sync endpoint.
  */
 
+export interface ThresholdEntry {
+  enabled: boolean;
+  value: number;
+  description: string;
+}
+
+export interface ThresholdsConfig {
+  heartRateHigh: ThresholdEntry;
+  heartRateLow: ThresholdEntry;
+  spo2Low: ThresholdEntry;
+  sleepLow: ThresholdEntry;
+  sleepHigh: ThresholdEntry;
+  bodyTempHigh: ThresholdEntry;
+  bodyTempLow: ThresholdEntry;
+  noSyncTimeout: ThresholdEntry;
+}
+
 export interface HealthConnectConfig {
   enabled: boolean;
   authToken: string;
@@ -11,6 +28,21 @@ export interface HealthConnectConfig {
   httpPort: number;
   httpBind: string;
   retentionDays: number;
+  thresholds: ThresholdsConfig;
+  alertCooldownMinutes: number;
+  alertsPath: string;
+}
+
+// --- Alert types ---
+
+export interface HealthAlert {
+  timestamp: string;
+  type: string;
+  threshold: number;
+  actual: number;
+  message: string;
+  record: HealthRecord;
+  read?: boolean;
 }
 
 // --- Incoming data from the Android app ---

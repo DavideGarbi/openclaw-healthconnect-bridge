@@ -1,8 +1,8 @@
 {
   "id": "health-connect",
   "name": "Health Connect Bridge",
-  "description": "Receives health data from Android Health Connect via HTTP and provides agent tools to query it.",
-  "version": "0.1.1",
+  "description": "Receives health data from Android Health Connect via HTTP and provides agent tools to query it. Supports configurable health alert thresholds.",
+  "version": "0.2.0",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -41,6 +41,87 @@
         "minimum": 1,
         "default": 90,
         "description": "Number of days to retain health data"
+      },
+      "alertCooldownMinutes": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 30,
+        "description": "Minimum minutes between alerts of the same type (default: 30)"
+      },
+      "alertsPath": {
+        "type": "string",
+        "description": "Path to store alert files (default: <storagePath>/alerts/)"
+      },
+      "thresholds": {
+        "type": "object",
+        "description": "Health alert thresholds. All disabled by default — enable the ones relevant to your wearable.",
+        "additionalProperties": false,
+        "properties": {
+          "heartRateHigh": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 170 }
+            },
+            "description": "BPM above this at rest triggers alert"
+          },
+          "heartRateLow": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 45 }
+            },
+            "description": "BPM below this triggers alert"
+          },
+          "spo2Low": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 92 }
+            },
+            "description": "Blood oxygen % below this triggers alert"
+          },
+          "sleepLow": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 5.0 }
+            },
+            "description": "Hours of sleep below this triggers alert"
+          },
+          "sleepHigh": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 12.0 }
+            },
+            "description": "Hours of sleep above this triggers alert"
+          },
+          "bodyTempHigh": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 38.5 }
+            },
+            "description": "Body temperature °C above this triggers alert"
+          },
+          "bodyTempLow": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 35.0 }
+            },
+            "description": "Body temperature °C below this triggers alert"
+          },
+          "noSyncTimeout": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "value": { "type": "number", "default": 120 }
+            },
+            "description": "Minutes without a sync during daytime (8:00-23:00) triggers alert"
+          }
+        }
       }
     },
     "required": ["authToken"]
@@ -52,6 +133,24 @@
     "httpPath": { "label": "HTTP Endpoint Path" },
     "httpPort": { "label": "HTTP Port" },
     "httpBind": { "label": "HTTP Bind Address" },
-    "retentionDays": { "label": "Data Retention (days)" }
+    "retentionDays": { "label": "Data Retention (days)" },
+    "alertCooldownMinutes": { "label": "Alert Cooldown (minutes)" },
+    "alertsPath": { "label": "Alerts Storage Path" },
+    "thresholds.heartRateHigh.enabled": { "label": "Heart Rate High Alert" },
+    "thresholds.heartRateHigh.value": { "label": "Heart Rate High (bpm)" },
+    "thresholds.heartRateLow.enabled": { "label": "Heart Rate Low Alert" },
+    "thresholds.heartRateLow.value": { "label": "Heart Rate Low (bpm)" },
+    "thresholds.spo2Low.enabled": { "label": "SpO2 Low Alert" },
+    "thresholds.spo2Low.value": { "label": "SpO2 Low (%)" },
+    "thresholds.sleepLow.enabled": { "label": "Sleep Low Alert" },
+    "thresholds.sleepLow.value": { "label": "Sleep Low (hours)" },
+    "thresholds.sleepHigh.enabled": { "label": "Sleep High Alert" },
+    "thresholds.sleepHigh.value": { "label": "Sleep High (hours)" },
+    "thresholds.bodyTempHigh.enabled": { "label": "Body Temp High Alert" },
+    "thresholds.bodyTempHigh.value": { "label": "Body Temp High (°C)" },
+    "thresholds.bodyTempLow.enabled": { "label": "Body Temp Low Alert" },
+    "thresholds.bodyTempLow.value": { "label": "Body Temp Low (°C)" },
+    "thresholds.noSyncTimeout.enabled": { "label": "No Sync Timeout Alert" },
+    "thresholds.noSyncTimeout.value": { "label": "No Sync Timeout (minutes)" }
   }
 }

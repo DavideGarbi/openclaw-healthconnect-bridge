@@ -123,6 +123,9 @@ Examples:
 | `httpPath` | No | `/health-connect/sync` | HTTP endpoint path |
 | `storagePath` | No | `~/.openclaw/health-connect-data` | Directory for daily JSON data files |
 | `retentionDays` | No | `90` | Automatically delete data older than this |
+| `thresholds` | No | all disabled | Health alert thresholds (see [Health Alerts](#health-alerts)) |
+| `alertCooldownMinutes` | No | `30` | Minimum minutes between alerts of the same type |
+| `alertsPath` | No | `<storagePath>/alerts/` | Directory for alert JSON files |
 
 ## Sync API
 
@@ -200,6 +203,75 @@ Query specific data types with optional date range and limit:
 
 ### `action: "dates"`
 Lists all dates that have stored health data.
+
+### `action: "alerts"`
+Returns pending (unread) health alerts and marks them as read. Use this to check if any health thresholds have been crossed.
+
+### `action: "thresholds"`
+Returns the current alert threshold configuration — which thresholds are enabled, their values, and which are disabled. Useful for helping the user configure their alerts.
+
+## Health Alerts
+
+The plugin can monitor incoming health data for anomalies and generate alert files when configurable thresholds are crossed.
+
+### How it works
+
+1. When a sync POST arrives, the plugin checks each record against enabled thresholds
+2. If a threshold is crossed, an alert file is written to the alerts directory
+3. The agent can retrieve pending alerts via `action: "alerts"`
+4. A cooldown period (default: 30 min) prevents duplicate alerts of the same type
+
+### Threshold configuration
+
+Add a `thresholds` object to your plugin config. All thresholds are **disabled by default** — enable only the ones relevant to your wearable:
+
+```json5
+"health-connect": {
+  enabled: true,
+  config: {
+    authToken: "your-token",
+    alertCooldownMinutes: 30,  // min between same alert type (default: 30)
+    thresholds: {
+      // Recommended for everyone
+      heartRateHigh: { enabled: true, value: 170 },  // bpm at rest
+      heartRateLow: { enabled: true, value: 45 },    // bpm (athletes may need lower)
+      sleepLow: { enabled: true, value: 5.0 },       // hours
+
+      // Enable if your wearable supports it
+      spo2Low: { enabled: true, value: 92 },          // % (below 92% is concerning)
+      bodyTempHigh: { enabled: true, value: 38.5 },   // °C
+
+      // Optional / situational
+      sleepHigh: { enabled: false, value: 12.0 },     // hours
+      bodyTempLow: { enabled: false, value: 35.0 },   // °C (hypothermia)
+      noSyncTimeout: { enabled: false, value: 120 }   // minutes without sync (daytime only)
+    }
+  }
+}
+```
+
+### Smart alerting rules
+
+- **Only checks data that exists** — if no SpO2 records are synced, no SpO2 alerts are generated. Missing data types are expected (not all wearables have all sensors).
+- **Exercise-aware heart rate** — high heart rate alerts are suppressed if an exercise session overlaps with the heart rate reading.
+- **Sleep timing** — sleep alerts only trigger on completed sessions (not while the user is still sleeping).
+- **No-sync timeout** — only alerts during daytime hours (8:00–23:00) to avoid false alarms overnight.
+- **Cooldown** — after triggering, the same alert type won't fire again for `alertCooldownMinutes` (default: 30).
+
+### Alert file format
+
+Alert files are stored in `<storagePath>/alerts/`:
+
+```json
+{
+  "timestamp": "2026-03-16T22:57:00Z",
+  "type": "heart_rate_high",
+  "threshold": 170,
+  "actual": 185,
+  "message": "Heart rate alert: 185 bpm (threshold: 170 bpm)",
+  "record": { "type": "heart_rate", "time": "2026-03-16T22:57:00Z", "bpm": 185 }
+}
+```
 
 ## Data Storage
 

@@ -17,7 +17,7 @@ moshi = "1.15.2"
 securityCrypto = "1.1.0-alpha06"
 datastorePreferences = "1.1.2"
 coroutines = "1.10.1"
-healthConnect = "1.1.0-alpha12"
+healthConnect = "1.2.0-alpha02"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

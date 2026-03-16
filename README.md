@@ -19,6 +19,25 @@ The app reads health metrics from Health Connect and periodically syncs them to 
 
 This guide walks you through the full setup: installing the plugin on your OpenClaw server, then connecting the Android app.
 
+### One-Click Install via OpenClaw
+
+If you already have OpenClaw running, paste this prompt into your OpenClaw chat to have the agent install and configure the plugin for you:
+
+> Install the Health Connect Bridge plugin from the GitHub repo https://github.com/DavideGarbi/openclaw-healthconnect-bridge.
+> 1. Clone the repo to a temp directory
+> 2. Copy the `openclaw-plugin/` folder to `~/.openclaw/extensions/health-connect/`
+> 3. Run `npm install` inside that folder
+> 4. Generate a secure auth token with `openssl rand -hex 32`
+> 5. Add the plugin entry to my OpenClaw config (`~/.openclaw/openclaw.json`) under `plugins.entries["health-connect"]` with `enabled: true` and the generated `authToken` in the config
+> 6. Restart the gateway
+> 7. Print the full endpoint URL and the generated token so I can copy them into the Android app
+
+Then skip to [Step 5](#step-5-install-the-android-app).
+
+---
+
+### Manual Setup
+
 ### Step 1: Install the OpenClaw Plugin
 
 Copy the `openclaw-plugin/` folder from this repo into your OpenClaw extensions directory:

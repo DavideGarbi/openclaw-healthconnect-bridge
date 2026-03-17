@@ -36,6 +36,11 @@
         "default": "0.0.0.0",
         "description": "Bind address for the HTTP server (default: 0.0.0.0)"
       },
+      "publicHealthCheck": {
+        "type": "boolean",
+        "default": false,
+        "description": "If true, GET health check endpoint does not require authentication"
+      },
       "retentionDays": {
         "type": "integer",
         "minimum": 1,
@@ -133,6 +138,7 @@
     "httpPath": { "label": "HTTP Endpoint Path" },
     "httpPort": { "label": "HTTP Port" },
     "httpBind": { "label": "HTTP Bind Address" },
+    "publicHealthCheck": { "label": "Public Health Check" },
     "retentionDays": { "label": "Data Retention (days)" },
     "alertCooldownMinutes": { "label": "Alert Cooldown (minutes)" },
     "alertsPath": { "label": "Alerts Storage Path" },

@@ -7,6 +7,42 @@ import type { HealthConnectConfig, SyncPayload, ThresholdsConfig } from "./src/t
 import { homedir } from "os";
 import { join } from "path";
 
+// --- Security constants ---
+const MAX_BODY_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_RECORDS_PER_SYNC = 50_000;
+const MAX_STRING_FIELD_LENGTH = 200;
+
+// --- Rate limiting ---
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 30; // max 30 POSTs per minute per IP
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+// Clean up stale entries periodically (every 5 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 300_000);
+
+function sanitizeString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  let sanitized = value.slice(0, MAX_STRING_FIELD_LENGTH);
+  sanitized = sanitized.replace(/\0/g, "");
+  return sanitized;
+}
+
 const DEFAULT_THRESHOLDS: ThresholdsConfig = {
   heartRateHigh: { enabled: false, value: 170, description: "BPM above this at rest triggers alert" },
   heartRateLow: { enabled: false, value: 45, description: "BPM below this triggers alert" },
@@ -66,6 +102,8 @@ function resolveConfig(raw: unknown): HealthConnectConfig {
       typeof cfg.alertCooldownMinutes === "number" ? cfg.alertCooldownMinutes : 30,
     alertsPath:
       typeof cfg.alertsPath === "string" ? cfg.alertsPath : join(storagePath, "alerts"),
+    publicHealthCheck:
+      typeof cfg.publicHealthCheck === "boolean" ? cfg.publicHealthCheck : false,
   };
 }
 
@@ -80,21 +118,32 @@ function validateSyncPayload(body: unknown): { valid: true; payload: SyncPayload
     return { valid: false, error: "'records' must be an array" };
   }
 
+  if (obj.records.length > MAX_RECORDS_PER_SYNC) {
+    return { valid: false, error: `Too many records (${obj.records.length}). Maximum is ${MAX_RECORDS_PER_SYNC}` };
+  }
+
   if (typeof obj.syncedAt !== "string") {
     return { valid: false, error: "'syncedAt' must be an ISO 8601 string" };
   }
 
   for (let i = 0; i < obj.records.length; i++) {
-    const r = obj.records[i];
-    if (!r || typeof r !== "object" || typeof (r as Record<string, unknown>).type !== "string") {
+    const r = obj.records[i] as Record<string, unknown>;
+    if (!r || typeof r !== "object" || typeof r.type !== "string") {
       return { valid: false, error: `records[${i}] must have a 'type' field` };
     }
+    // Sanitize string fields to prevent prompt injection
+    if (typeof r.title === "string") r.title = sanitizeString(r.title);
+    if (typeof r.exerciseType === "string") r.exerciseType = sanitizeString(r.exerciseType);
+    if (typeof r.name === "string") r.name = sanitizeString(r.name);
+    if (typeof r.location === "string") r.location = sanitizeString(r.location);
+    if (typeof r.notes === "string") r.notes = sanitizeString(r.notes);
+    if (typeof r.mealType === "string") r.mealType = sanitizeString(r.mealType);
   }
 
   return {
     valid: true,
     payload: {
-      deviceId: typeof obj.deviceId === "string" ? obj.deviceId : undefined,
+      deviceId: typeof obj.deviceId === "string" ? sanitizeString(obj.deviceId) : undefined,
       records: obj.records as SyncPayload["records"],
       syncedAt: obj.syncedAt as string,
     },
@@ -103,8 +152,15 @@ function validateSyncPayload(body: unknown): { valid: true; payload: SyncPayload
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalBytes += buf.length;
+    if (totalBytes > MAX_BODY_BYTES) {
+      req.destroy();
+      throw new Error("Request body too large");
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString("utf-8");
 }
@@ -184,8 +240,16 @@ const healthConnectPlugin = {
         return;
       }
 
-      // GET — health check (no auth)
+      // GET — health check
       if (method === "GET") {
+        if (!config.publicHealthCheck) {
+          const authHeader = req.headers.authorization;
+          const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader?.trim();
+          if (token !== config.authToken) {
+            jsonResponse(res, 401, { error: "Unauthorized" });
+            return;
+          }
+        }
         const dates = store.getAvailableDates();
         jsonResponse(res, 200, {
           ok: true,
@@ -198,6 +262,12 @@ const healthConnectPlugin = {
 
       // POST — sync endpoint (requires auth)
       if (method === "POST") {
+        const clientIp = req.socket.remoteAddress || "unknown";
+        if (isRateLimited(clientIp)) {
+          jsonResponse(res, 429, { error: "Too many requests. Try again later." });
+          return;
+        }
+
         const authHeader = req.headers.authorization;
         if (!config.authToken || !authHeader) {
           jsonResponse(res, 401, { error: "Unauthorized" });
@@ -257,6 +327,10 @@ const healthConnectPlugin = {
             alertsGenerated,
           });
         } catch (err) {
+          if (err instanceof Error && err.message === "Request body too large") {
+            jsonResponse(res, 413, { error: "Payload too large (max 20MB)" });
+            return;
+          }
           api.logger.error(`[health-connect] Sync error: ${err instanceof Error ? err.message : String(err)}`);
           jsonResponse(res, 500, { error: "Internal server error" });
         }

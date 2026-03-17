@@ -27,6 +27,9 @@ export class HealthDataStore {
     let updated = 0;
 
     for (const [date, records] of byDate) {
+      if (!this.isValidDate(date)) {
+        continue; // skip records with invalid/malicious dates
+      }
       const existing = this.loadDay(date);
       if (existing) {
         // Merge: add new records, avoid exact duplicates
@@ -117,7 +120,12 @@ export class HealthDataStore {
 
   // --- Private helpers ---
 
+  private isValidDate(date: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date));
+  }
+
   private loadDay(date: string): StoredDay | null {
+    if (!this.isValidDate(date)) return null;
     const path = join(this.basePath, `${date}.json`);
     if (!existsSync(path)) return null;
     try {

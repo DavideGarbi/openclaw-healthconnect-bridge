@@ -31,6 +31,7 @@ export interface HealthConnectConfig {
   thresholds: ThresholdsConfig;
   alertCooldownMinutes: number;
   alertsPath: string;
+  publicHealthCheck: boolean;
 }
 
 // --- Alert types ---

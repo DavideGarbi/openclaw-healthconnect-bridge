@@ -3,11 +3,28 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
+val localProperties = Properties()
+rootProject.file("local.properties").let { file ->
+    if (file.exists()) localProperties.load(FileInputStream(file))
+}
+
 android {
     namespace = "io.github.davidegarbi.openclaw_healthconnect_bridge"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file(localProperties.getProperty("RELEASE_STORE_FILE", "release.jks"))
+            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
+            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS", "")
+            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
         }
     }
 
@@ -24,6 +41,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -113,7 +113,7 @@ export class HealthDataStore {
   getAvailableDates(): string[] {
     if (!existsSync(this.basePath)) return [];
     return readdirSync(this.basePath)
-      .filter((f) => f.endsWith(".json"))
+      .filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
       .map((f) => f.replace(".json", ""))
       .sort();
   }
